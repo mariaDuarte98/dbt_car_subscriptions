@@ -1,0 +1,126 @@
+version: 2
+
+models:
+  - name: stg_cars
+    description: "Staging model for cars data from car_subscriptions.cars"
+    config:
+      tags: ['staging', 'base']
+    tests:
+      - dbt_utils.expression_is_true:
+          expression: "defleet_date >= infleet_date"
+          name: "defleet_not_before_infleet"
+    columns:
+      - name: car_id
+        description: "Primary key for cars"
+        tests: [unique, not_null]
+      - name: car_vin_number
+        description: "Vehicle Identification Number (PII, staging only)"
+        tags: ["pii"]
+      - name: brand
+        description: "Vehicle Brand Name"
+        tests: [not_null]
+      - name: engine_type
+        description: "Vehicle Engine Type"
+        tests: [not_null]
+      - name: model
+        description: "Vehicle Model"
+        tests: [not_null]
+      - name: license_plate
+        description: "Car license plate (PII, staging only)"
+        tags: ["pii"]
+      - name: infleet_date
+        description: "Date car was registered"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: timestamp}
+      - name: defleet_date
+        description: "Date car was deregistered; Future date if still registered"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: timestamp}
+  - name: stg_customers
+    description: "Staging model for customers data from car_subscriptions.customers"
+    config:
+      tags: ['staging', 'base']
+    columns:
+      - name: customer_id
+        description: "Primary key for customers"
+        tests: [unique, not_null]
+      - name: first_name
+        description: "Customer first name (PII, staging only)"
+        tags: ["pii"]
+      - name: second_name
+        description: "Customer last name (PII, staging only)"
+        tags: ["pii"]
+      - name: company_name
+        description: "Customer company name (PII if B2B)"
+        tags: ["pii"]
+      - name: address_city
+        description: "Customer city address"
+        tests: [not_null]
+      - name: address_zip
+        description: "Customer zip address (PII, staging only)"
+        tags: ["pii"]
+      - name: address_street
+        description: "Customer street address (PII, staging only)"
+        tags: ["pii"]
+      - name: address_street_house
+        description: "Customer house address (PII, staging only)"
+        tags: ["pii"]
+      - name: customer_type
+        description: "Customer classification (B2B/B2C)"
+        tests: 
+          - not_null
+          - accepted_values:
+              values: ['b2b', 'b2c']
+              config:
+                severity: error
+  - name: stg_subscriptions
+    description: "Staging model for subscriptions data from car_subscriptions.subscriptions"
+    config:
+      tags: ['staging', 'base']
+    tests:
+      - dbt_utils.expression_is_true:
+          expression: "subscription_start_date >= subscription_creation_date"
+          name: "sub_start_not_before_creation_date"
+      - dbt_utils.expression_is_true:
+          expression: "term_month >= 0 and monthly_rate>= 0"
+          name: "term_month_is_positive"
+    columns:
+      - name: subscription_id
+        description: "Primary key for subscriptions"
+        tests: [unique, not_null]
+      - name: customer_id
+        description: "Foreign key to customers"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
+      - name: car_id
+        description: "Foreign key to cars"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_cars')
+              field: car_id
+      - name: subscription_creation_date
+        description: "Subscription Creation Date"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: timestamp}
+      - name: subscription_start_date
+        description: "Subscription Start Date"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: timestamp}
+      - name: term_month
+        description: "Subscription length in months"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: integer} 
+      - name: monthly_rate
+        description: "Monthly fee for the subscription"
+        tests: 
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: double} 

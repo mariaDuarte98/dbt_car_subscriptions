@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: car_subscriptions
+    schema: main
+
+    tables:
+      - name: customers
+      - name: cars
+      - name: subscriptions
+      - name: invoices
+      - name: invoice_line_items

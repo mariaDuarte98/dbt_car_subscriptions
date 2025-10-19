@@ -1,0 +1,149 @@
+version: 2
+
+models:
+  - name: dim_cars
+    description: "Dimension table for car assets, including lifecycle dates and aggregated expected revenue."
+    config:
+      tags: ['dim', 'marts']
+    tests:
+        - dbt_utils.expression_is_true: # do i need to add ths check again, or not since it is already in other schenas?
+            expression: "defleet_date >= infleet_date"
+            name: "defleet_not_before_infleet"
+        - dbt_utils.expression_is_true:
+            expression: "total_revenue_expected >= 0"
+            name: "total_revenew_expected_is_not_negative"
+    columns:
+      - name: car_id
+        description: "Primary key (PK) for cars."
+        tests: [unique, not_null]
+      - name: brand
+        description: "Vehicle Brand Name."
+        tests: [not_null]
+      - name: model
+        description: "Vehicle Model Name."
+        tests: [not_null]
+      - name: engine_type
+        description: "Vehicle Engine Type."
+        tests: [not_null]
+      - name: infleet_date
+        description: "Date car was registered"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: timestamp}
+      - name: defleet_date
+        description: "Date car was deregistered; Future date if still registered"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: timestamp}
+      - name: total_revenue_expected
+        description: "Total revenue expected from all subscriptions of this car."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: double}
+
+  - name: dim_customers
+    description: "Dimension table for customers, including aggregated metrics like CLV and subscription count."
+    config:
+      tags: ['dim', 'marts']
+    tests:
+      - dbt_utils.expression_is_true:
+          expression: "total_unique_cars_subscribed >= 1"
+          name: "total_unique_cars_subscribed_bigger_than_1"
+      - dbt_utils.expression_is_true:
+          expression: "estimated_customer_lifetime_value >= 0"
+          name: "estimated_customer_lifetime_value_is_not_negative"
+      - dbt_utils.expression_is_true:
+          expression: "total_subscriptions_count >= 1"
+          name: "total_subscriptions_count_bigger_than_1"
+    columns:
+      - name: customer_id
+        description: "Primary key (PK) for customers."
+        tests: [unique, not_null]
+      - name: customer_type 
+        description: "Customer classification (B2B/B2C)"
+        tests: 
+          - not_null
+          - accepted_values:
+              values: ['b2b', 'b2c']
+              config:
+                severity: error
+      - name: total_subscriptions_count
+        description: "Total number of subscriptions this customer has had."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: integer}
+      - name: total_unique_cars_subscribed
+        description: "Count of unique cars subscribed by the customer."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: integer}
+      - name: estimated_customer_lifetime_value
+        description: "Estimated Customer Lifetime Value (CLV)."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: double}
+      - name: first_subscription_date
+        description: "Date of the customer's first subscription."
+        tests: 
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type: {column_type: timestamp}
+
+  - name: mart_subscription_events
+    description: "Fact table containing one row per subscription event, used for analytical queries."
+    config:
+      tags: ['fact', 'marts']
+    tests:
+      - dbt_utils.expression_is_true: 
+              expression: "term_month >= 0 and expected_total_subscription_value>= 0"
+              name: "term_month_and_monthly_rating_not_negative"
+    columns:
+      - name: subscription_id
+        description: "Primary key (PK) of the fact table."
+        tests: [unique, not_null]
+      - name: customer_id
+        description: "Foreign Key (FK) to dim_customers."
+        tests:
+          - not_null
+          - relationships: 
+              to: ref('dim_customers')
+              field: customer_id
+      - name: car_id
+        description: "Foreign Key (FK) to dim_cars."
+        tests:
+          - not_null
+          - relationships: 
+              to: ref('dim_cars')
+              field: car_id
+      - name: customer_type # this is alway sthe same is this an issue since its duplicated test?
+        description: "Customer classification (B2B/B2C)"
+        tests: 
+          - not_null
+          - accepted_values:
+              values: ['b2b', 'b2c']
+              config:
+                severity: error
+      - name: brand
+        description: "Vehicle Brand Name (Redundant attribute for slicing)."
+        tests: [not_null]
+      - name: term_month
+        description: "Subscription length in months."
+        tests: [not_null]
+      - name: address_city
+        description: "Customer city address (Redundant attribute for slicing)."
+        tests: [not_null]
+      - name: subscription_start_date
+        description: "Subscription start date."
+        tests: [not_null]
+      - name: subscription_start_week_id
+        description: "Time key for weekly aggregation (YYYY-WW format)."
+        tests: 
+          - not_null #-- duplcated again
+          - dbt_utils.expression_is_true:
+              expression: " ~ '^\\d{4}-W\\d{2}$' = TRUE"
+              name: "week_id_format_is_correct_final"
+      - name: subscription_end_date
+        description: "Subscription end date."
+        tests: [not_null]
+      - name: expected_total_subscription_value
+        description: "Total contract value (monthly_rate * term_month)."
+        tests: [not_null]
